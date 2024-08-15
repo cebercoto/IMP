@@ -1,0 +1,327 @@
+#!/bin/bash
+## kk test remote
+echo "#########################################################"
+echo "#                      IMP v0.43                        #"
+echo "#   Writen by Ezequiel Martin (cebercoto@gmail.com)     #"
+echo "#                                                       #"
+echo "#                      14/01/2020                       #"
+echo "#                                                       #"
+echo "#  This Bash script uses the following software under   #"
+echo "#     GNU Public license v2: vim, vcftools, R,          #"
+echo "#     annovar, samtools, bwa, picard and GATK           #"
+echo "#                                                       #"
+echo "#            This Script will only work on              #"
+echo "#               odin without adaptation                 #"
+echo "#                                                       #"
+echo "#                       Help:                           #"
+echo "#                 IMP --help true                       #"
+echo "#                                                       #"
+echo "#########################################################"
+## Definition of Variables
+HELP=false
+##########################
+BAMPATH=NULL
+##########################
+DATATYPE=Capture
+##########################
+LIST=NULL
+CORES=1
+SIMSAM=1
+REFERENCE=hg38.bwa
+##########################
+ALIGN=false
+ALT=false
+PCRDUP=remove
+PCRDUPALG=picard
+REALIGN=false
+RECALIBRATION=false
+BWAC=10000
+BWAR=1.5
+##########################
+VARCALL=false
+VARCALLALG=UG
+BED=NULL
+PAD=100
+VARMAPQ=30
+SOMATIC=false
+SOMATICFILE=NULL
+##########################
+QC=false
+QCTHRESHOLDCOV=15
+QCXAXIS=500
+##########################
+SCORE=false
+BASSMAF=1
+BASSMODEL=dominant
+DUPLICATES=false
+DUPFILE=NULL
+##########################
+DELETE=true
+##########################
+REPORT=false
+## Options Section
+while [[ $# > 1 ]]
+do
+key="$1"
+case $key in
+        -H|--help)
+        HELP=$2
+        shift
+        ;;
+        -l|--list)
+        LIST=${2}
+        shift
+        ;;
+        -c|--cores)
+        CORES=$2
+        shift
+        ;;
+        -b|--build)
+        REFERENCE=$2
+        shift
+        ;;
+        --pcrdup)
+        PCRDUP=${2}
+        shift
+        ;;
+        --pcrdup-alg)
+        PCRDUPALG=${2}
+        shift
+        ;;
+        --realign)
+        REALIGN=${2}
+        shift
+        ;;
+        --recalibration)
+        RECALIBRATION=${2}
+        shift
+        ;;
+        --qc)
+        QC=${2}
+        shift
+        ;;
+        --score)
+        SCORE=${2}
+        shift
+        ;;
+        -a|--align)
+        ALIGN=${2}
+        shift
+        ;;
+        -v|--variant-calling)
+        VARCALL=${2}
+        shift
+        ;;
+        --delete)
+        DELETE=${2}
+        shift
+        ;;
+        -g|--variant-calling-algorithm)
+        VARCALLALG=${2}
+        shift
+        ;;
+        --alt)
+        ALT=${2}
+        shift
+        ;;
+        --bed)
+        BED=${2}
+        shift
+        ;;
+        --pad)
+        PAD=${2}
+        shift
+        ;;
+	--simsam)
+	SIMSAM=${2}
+	shift
+	;;
+	--qc-tcov)
+	QCTHRESHOLDCOV=${2}
+	shift
+	;;
+	--qc-xaxis)
+	QCXAXIS=${2}
+	shift
+	;;
+	--bwa-c)
+	BWAC=${2}
+	shift
+	;;
+	--bwa-r)
+	BWAR=${2}
+	shift
+	;;
+	--varmapq)
+	VARMAPQ=${2}
+	shift
+	;;
+        --bampath)
+        BAMPATH=${2}
+        shift
+        ;;
+        --somatic)
+        SOMATIC=${2}
+        shift
+        ;;
+        --somatic-file)
+        SOMATICFILE=${2}
+        shift
+        ;;
+        --report)
+        REPORT=${2}
+        shift
+        ;;
+        --bass-maf)
+        BASSMAF=${2}
+        shift
+        ;;
+        --bass-model)
+        BASSMODEL=${2}
+        shift
+        ;;
+        --duplicates)
+        DUPLICATES=${2}
+        shift
+        ;;
+        --duplicates-file)
+        DUPFILE=${2}
+        shift
+        ;;
+        --datatype)
+        DATATYPE=${2}
+        shift
+        ;;
+esac
+shift
+done
+if [ $HELP = "true" ]; then
+        echo "Available options are:"
+        echo ""
+        echo "-H/--help                        Display this help menuand exit"
+        echo "-l/--list                        Provide a txt file with one sample name per line (Default=NULL)"
+        echo "-c/--cores                       Number of cores/theards to be used in the processing of the samples(Default=1)"
+        echo "-b/--build                       Reference genome build to align to (Default=hg38)"
+        echo "--pcrdup                         Whether to remove PCR duplicates or not (Default=true)"
+        echo "--pcrdup-alg                     Which algorithm to use to remove PCR duplicates: picard or samtools (Default=picard)"
+        echo "--realign                        Whether to realign indels or not (Default=true)"
+        echo "--recalibration                  Whether to recalibrate quality scores or not (Default=true)"
+        echo "--qc                             Whether to qc the aligned samples' vcfs or not (Name variants without rs, Q > 30, DP > 10, remove missing genotypes, Coverage calculations) (Default=false)"
+        echo "--score                          Whether to annotate and prioritize the resulting VCF into a sepparate .txt file (Default=false)"
+        echo "-a/--align                       Whether to perform teh aligment of the samples or not. If set to false .bam files with the file name SAMPLENAME_BUILD.bam and .bai must be present (Default=true)"
+        echo "-v/--variant-calling             Whether to call the variants from the bam file into a vcf or not. It requires bam files. if set to false, a vcf must be provided for subsequent steps (Default=true)"
+        echo "-g/--variant-calling-algorithm   What GATK algorithm to use when calling the genetic variation from the BAM(s) file(s), the options are UG or HC (Default=UG)"
+        echo "--delete                         Whether to delete all the temporal files or not when all operations have finished (Default=true)"
+        echo "--alt                            Whether to use the alt contigs of the reference genome or not (Default=false)"
+        echo "--bed                            Bed file containing the intervals in which to call variants and do coverage calculations (Default=Whole Genome)"
+        echo "--pad                            How much padding to apply to the intervals in the bed file provided with --bed (Default=100)"
+	echo "--simsam                         How many samples to precess at the same time with the pipeline (Default=1)"
+	echo "--qc-tcov                        Thershold coverage for calculations (Default=15)"
+	echo "--qc-xaxis                       X axis limit in the coverage graph (Default=500)"
+	echo "--kit                            Kit used for labray preparation (Default=nextera)"
+	echo "--bwa-c                          bwa -c parameter (multimaps) (Default=1)"
+	echo "--bwa-r                          bwa -r parameter (accuracy) (Default=1)"
+	echo "--varmapq                        Quallity threshold for read mapping when calling variants (Deafult=30)"
+        echo "--bampath                        The path, absolute, to were the bam files in the list files are (Default=Current path)"
+        echo "--somatic                        Whether to use the somatic pipeline for variant calling or not, a germline/tumour pairs file needs to be provided (Default=false)"
+        echo "--somatic-file                   A file specifing the pairs of germline/tumour to use with the somatic variant calling pipeline (Defualt=NULL)"
+        echo "--report                         Wether to generate a clinical environment friendly HTML report on the results or not (Default==false)"
+        echo "--bass-maf                       When annotatin/prioritizating variants using BASS, which MAF threshold to use to filter variants out based on 1000 Genomes and ExAC (Default=0.10)"
+        echo "--bass-model                     Which genetic model to assume for annotation prioritization: dominant, recessive or all (Default=dominant)"
+        echo "--duplicates                     Whether there are duplicates for tumour samples for more accurate low VAF variant calling (Default=false)"
+        echo "--duplicates-file                File specifying which two IDs are duplicates of the same sample, one sample per line, tab delimited. Only works if --duplicates=true (Default=NULL)"
+        echo "--wgs                            Shether the data is WGS or not (Default=false)"
+        exit
+fi
+echo -e `date +%y%m%d\ %H%M%S\ %s` "     Logging to ${LIST}.log" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "     the options in effect are:" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         List: ${LIST}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Cores: ${CORES}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Reference: ${REFERENCE}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Ppcrdup: ${PCRDUP}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Ppcrdup-alg: ${PCRDUPALG}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Realign: ${REALIGN}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Recalibration: ${RECALIBRATION}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         QC: ${QC}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Score: ${SCORE}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Align: ${ALIGN}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Variant Calling: ${VARCALL}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Delete: ${DELETE}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Variant Calling Algorithm: ${VARCALLALG}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         ALT: ${ALT}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         BED: ${BED}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         PAD: ${PAD}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         SIMSAM: ${SIMSAM}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         qc-tcov: ${QCTHRESHOLDCOV}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         qc-xaxis: ${QCXAXIS}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         bwa-c: ${BWAC}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         bwa-r: ${BWAR}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         read mapping quality for variant calling: ${VARMAPQ}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         path: ${BAMPATH}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Somatic Variant Calling: ${SOMATIC}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Germline/Tumour pairs file: ${SOMATICFILE}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         HTML reporting: ${REPORT}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         BASS annotation and prioritization MAF threhsold set to ${BASSMAF}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         BASS annotation and prioritization model set to ${BASSMODEL}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Duplicates set to ${DUPLICATES}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Duplicates file set to ${DUPFILE}" | tee -a ${LIST}.log
+echo -e `date +%y%m%d\ %H%M%S\ %s` "         Data is WGS: ${WGS}" | tee -a ${LIST}.log
+if [ ! -e ${LIST}.txt ]; then
+        echo ""
+        echo -e `date +%y%m%d\ %H%M%S\ %s` "     File ${LIST}.txt does not exist, exiting now" | tee -a ${LIST}.log
+        echo ""
+        exit
+fi
+if [ -e .AlignmentTemp_${LIST} ]; then
+        echo -e `date +%y%m%d\ %H%M%S\ %s` "     There is a previous partial run, going on with it" | tee -a ${LIST}.log
+else
+	echo -e `date +%y%m%d\ %H%M%S\ %s` "     Creating temporal files" | tee -a ${LIST}.log
+        mkdir .AlignmentTemp_${LIST}
+fi
+cp ${LIST}.txt .AlignmentTemp_${LIST}/${LIST}_Temp.txt
+## Aligment module ###################################################################################################################################################
+if [ ${ALIGN} = 'true' ]; then
+        for i in `cat ${LIST}.txt`; do
+                ONGOING=`ps aux | grep 2_align.sh | wc -l`
+                while [ ${ONGOING} -gt ${SIMSAM} ]; do
+                        ONGOING=`ps aux | grep 2_align.sh | wc -l`
+                        let ONGOING2=${ONGOING}-1
+                        echo -ne "\r${ONGOING2} aligments going on ATM, waiting for some to finish"
+                        sleep 5
+                done
+                echo -e `date +%y%m%d\ %H%M%S\ %s` "     ${i}: Starting alignment" | tee -a ${LIST}.log
+                mkdir .AlignmentTemp_${i}
+                2_align.sh --sample ${i} -l ${LIST} -c ${CORES} -b ${REFERENCE} --pcrdup ${PCRDUP} --pcrdup-alg ${PCRDUPALG} --realign ${REALIGN} --recalibration ${RECALIBRATION} --qc ${QC} --score ${SCORE} -a ${ALIGN} -v ${VARCALL} --delete ${DELETE} -g ${VARCALLALG} --alt ${ALT} --bed ${BED} --pad ${PAD} --simsam ${SIMSAM} --qc-tcov ${QCTHRESHOLDCOV} --qc-xaxis ${QCXAXIS} --bwa-c ${BWAC} --bwa-r ${BWAR} --varmapq ${VARMAPQ} --bampath ${BAMPATH} --somatic ${SOMATIC} --somatic-file ${SOMATICFILE} --report ${REPORT} --bass-maf ${BASSMAF} --bass-model ${BASSMODEL} --duplicates ${DUPLICATES} --duplicates-file ${DUPFILE} --datatype ${DATATYPE} &
+        done
+        wait
+        echo -e `date +%y%m%d\ %H%M%S\ %s` "     Aligment of all samples finished" | tee -a ${LIST}.log
+fi
+wait
+## QC module #########################################################################################################################################################
+if [ ${QC} = 'true' ]; then
+	4_QC.sh -l ${LIST} -c ${CORES} -b ${REFERENCE} --pcrdup ${PCRDUP} --pcrdup-alg ${PCRDUPALG} --realign ${REALIGN} --recalibration ${RECALIBRATION} --qc ${QC} --score ${SCORE} -a ${ALIGN} -v ${VARCALL} --delete ${DELETE} -g ${VARCALLALG} --alt ${ALT} --bed ${BED} --pad ${PAD} --simsam ${SIMSAM} --qc-tcov ${QCTHRESHOLDCOV} --qc-xaxis ${QCXAXIS} --bwa-c ${BWAC} --bwa-r ${BWAR} --varmapq ${VARMAPQ} --bampath ${BAMPATH} --somatic ${SOMATIC} --somatic-file ${SOMATICFILE} --report ${REPORT} --bass-maf ${BASSMAF} --bass-model ${BASSMODEL} --duplicates ${DUPLICATES} --duplicates-file ${DUPFILE} --datatype ${DATATYPE}
+fi
+wait
+## Variant Calling module ############################################################################################################################################
+if [ ${VARCALL} = 'true' ]; then
+	3_varcall.sh -l ${LIST} -c ${CORES} -b ${REFERENCE} --pcrdup ${PCRDUP} --pcrdup-alg ${PCRDUPALG} --realign ${REALIGN} --recalibration ${RECALIBRATION} --qc ${QC} --score ${SCORE} -a ${ALIGN} -v ${VARCALL} --delete ${DELETE} -g ${VARCALLALG} --alt ${ALT} --bed ${BED} --pad ${PAD} --simsam ${SIMSAM} --qc-tcov ${QCTHRESHOLDCOV} --qc-xaxis ${QCXAXIS} --bwa-c ${BWAC} --bwa-r ${BWAR} --varmapq ${VARMAPQ} --bampath ${BAMPATH} --somatic ${SOMATIC} --somatic-file ${SOMATICFILE} --report ${REPORT} --bass-maf ${BASSMAF} --bass-model ${BASSMODEL} --duplicates ${DUPLICATES} --duplicates-file ${DUPFILE} --datatype ${DATATYPE}
+fi
+wait
+## score module ######################################################################################################################################################
+if [ ${SCORE} = 'true' ]; then
+	7_score.sh -l ${LIST} -c ${CORES} -b ${REFERENCE} --pcrdup ${PCRDUP} --pcrdup-alg ${PCRDUPALG} --realign ${REALIGN} --recalibration ${RECALIBRATION} --qc ${QC} --score ${SCORE} -a ${ALIGN} -v ${VARCALL} --delete ${DELETE} -g ${VARCALLALG} --alt ${ALT} --bed ${BED} --pad ${PAD} --simsam ${SIMSAM} --qc-tcov ${QCTHRESHOLDCOV} --qc-xaxis ${QCXAXIS} --bwa-c ${BWAC} --bwa-r ${BWAR} --varmapq ${VARMAPQ} --bampath ${BAMPATH} --somatic ${SOMATIC} --somatic-file ${SOMATICFILE} --report ${REPORT} --bass-maf ${BASSMAF} --bass-model ${BASSMODEL} --duplicates ${DUPLICATES} --duplicates-file ${DUPFILE} --datatype ${DATATYPE}
+fi
+wait
+## report module #####################################################################################################################################################
+## This module is not constructed yet, just section here
+if [ ${REPORT} = 'true' ]; then
+	8_report.sh -l ${LIST} -c ${CORES} -b ${REFERENCE} --pcrdup ${PCRDUP} --pcrdup-alg ${PCRDUPALG} --realign ${REALIGN} --recalibration ${RECALIBRATION} --qc ${QC} --score ${SCORE} -a ${ALIGN} -v ${VARCALL} --delete ${DELETE} -g ${VARCALLALG} --alt ${ALT} --bed ${BED} --pad ${PAD} --simsam ${SIMSAM} --qc-tcov ${QCTHRESHOLDCOV} --qc-xaxis ${QCXAXIS} --bwa-c ${BWAC} --bwa-r ${BWAR} --varmapq ${VARMAPQ} --bampath ${BAMPATH} --somatic ${SOMATIC} --somatic-file ${SOMATICFILE} --report ${REPORT} --bass-maf ${BASSMAF} --bass-model ${BASSMODEL} --duplicates ${DUPLICATES} --duplicates-file ${DUPFILE} --datatype ${DATATYPE}
+fi
+wait
+## Delete files once all is done (or not) ############################################################################################################################
+if [ ${DELETE} = 'true' ]; then
+	echo -e `date +%y%m%d\ %H%M%S\ %s` "     Deleting temporal files" | tee -a ${LIST}.log
+	rm -r .AlignmentTemp_${LIST}
+else
+	echo -e `date +%y%m%d\ %H%M%S\ %s` "     Temporal files WERE NOT DELETED (folders name .AlignmentTemp_*)" | tee -a ${LIST}.log
+fi
